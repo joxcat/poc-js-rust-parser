@@ -1,7 +1,7 @@
-use nom::{AsChar, InputTakeAtPosition, error::VerboseError, branch::alt, bytes::complete::tag, bytes::complete::tag_no_case, bytes::complete::take, character::complete::alpha1, character::complete::one_of, error::{ErrorKind, context}, multi::{many1, many_m_n}, sequence::{terminated, tuple}};
+use nom::{AsChar, InputTakeAtPosition, branch::alt, bytes::complete::{tag_no_case, tag, take}, character::complete::{alpha1, one_of}, error::VerboseError, error::{ErrorKind, context}, multi::{count, many1, many_m_n}, sequence::{preceded, terminated, tuple}};
 use nom::Err as NomErr;
 
-use crate::{Result, types::{Host, Scheme}};
+use crate::{Result, types::{Host, IPNum, Scheme}};
 
 fn scheme(input: &str) -> Result<&str, Scheme> {
     context(
@@ -28,28 +28,72 @@ fn host(input: &str) -> Result<&str, Host> {
 }
 
 fn ip(input: &str) -> Result<&str, Host> {
-    unimplemented!("https://blog.logrocket.com/parsing-in-rust-with-nom/#parsingurlswithauthority")
-    // context(
-    //     "ip",
-    // )
+    context(
+        "ip",
+        alt((
+            tuple((count(terminated(ipv4_num, tag(".")), 3), ipv4_num)),
+            tuple((preceded(tag("["), many1(terminated(ipv6_num, tag(":")))), terminated(ipv6_num, tag("]")))),
+        )),
+    )(input)
+        .map(|(next_input, res)| {
+            match res.1 {
+                IPNum::IPV4(n) => {
+                    let mut ip: [u8; 4] = [0,0,0,0];
+                    res.0
+                       .into_iter()
+                       .enumerate()
+                       .for_each(|(idx, value)| {
+                           let value: Option<u8> = value.into();
+                           ip[idx] = value.unwrap();
+                       });
+                    ip[3] = n;
+                    (next_input, Host::IPV4(ip))
+                },
+                IPNum::IPV6(n) => {
+                    let mut ip: [u16; 8] = [0,0,0,0,0,0,0,0];
+                    let mut ip_iter = res.0
+                       .into_iter()
+                       .collect::<Vec<IPNum>>();
+                    ip_iter.reverse();
+
+                    ip_iter.into_iter()
+                           .enumerate()
+                           .for_each(|(idx, value)| {
+                        let value: Option<u16> = value.into();
+                        ip[6 - idx] = value.unwrap();
+                    });
+
+                    ip[7] = n;
+                    (next_input, Host::IPV6(ip))
+                }
+            }
+        })
 }
 
-fn ipv4_num(input: &str) -> Result<&str, u8> {
+fn ipv4_num(input: &str) -> Result<&str, IPNum> {
     context("ipv4 number", n_to_m_digits(1, 3))(input).and_then(|(next_input, res)| {
         match res.parse::<u8>() {
-            Ok(n) => Ok((next_input, n)),
+            Ok(n) => Ok((next_input, IPNum::IPV4(n))),
             Err(_) => Err(NomErr::Error(VerboseError { errors: vec![] })),
         }
     })
 }
 
-fn ipv6_num(input: &str) -> Result<&str, u16> {
+fn ipv6_num(input: &str) -> Result<&str, IPNum> {
     context("ipv6 number", n_to_m_hexas(0, 4))(input).and_then(|(next_input, res)| {
-        match u16::from_str_radix(&res, 16) {
-            Ok(n) => Ok((next_input, n)),
-            Err(_) => Err(NomErr::Error(VerboseError { errors: vec![] })),
+        if (&res).len() == 0 {
+            Ok((next_input, IPNum::IPV6(0)))
+        } else {
+            match u16::from_str_radix(&res, 16) {
+                Ok(n) => Ok((next_input, IPNum::IPV6(n))),
+                Err(_) => Err(NomErr::Error(VerboseError { errors: vec![] })),
+            }
         }
     })
+}
+
+fn ip_or_host(input: &str) -> Result<&str, Host> {
+    context("ip or domain", alt((ip, host)))(input)
 }
 
 // Utils
@@ -98,5 +142,20 @@ mod tests {
         assert_eq!(host("example.org:8080"), Ok((":8080", Host::HOST("example.org".to_string()))));
         assert_eq!(host("sub.example.org:8080"), Ok((":8080", Host::HOST("sub.example.org".to_string()))));
         assert_eq!(host("example.123"), Ok((".123", Host::HOST("example".to_string()))));
+    }
+
+    #[test]
+    fn test_ip() {
+        assert_eq!(ip("127.0.0.1:8080"), Ok((":8080", Host::IPV4([127,0,0,1]))));
+        assert_eq!(ip("0.0.0.0"), Ok(("", Host::IPV4([0,0,0,0]))));
+        assert_eq!(ip("[0:0:0:0:0:0:0:1]"), Ok(("", Host::IPV6([0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x1]))));
+        assert_eq!(ip("[::1]"), Ok(("", Host::IPV6([0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x1]))));
+        assert_eq!(ip("[2a01:5cc0:1:2::4]:8080"), Ok((":8080", Host::IPV6([0x0,0x0,0x2a01,0x5cc0,0x1,0x2,0x0,0x4]))));
+    }
+
+    #[test]
+    fn test_ip_or_host() {
+        assert_eq!(ip_or_host("[::ffff:124:1234:124]:4242"), Ok((":4242", Host::IPV6([0x0,0x0,0x0,0x0,0xffff,0x124,0x1234,0x124]))));
+        assert_eq!(ip_or_host("example.org:69420"), Ok((":69420", Host::HOST("example.org".to_string()))));
     }
 }

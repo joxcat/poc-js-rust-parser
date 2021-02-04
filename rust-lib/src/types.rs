@@ -4,8 +4,8 @@ pub struct URI<'a> {
     scheme: Scheme,
     host: Host,
     port: Option<u16>,
-    path: Option<Vec<&'a str>>,
-    query: Option<QueryParams<'a>>,
+    path: Option<&'a str>,
+    query: Option<&'a str>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,8 +32,29 @@ pub enum Host {
     IPV6([u16; 8]),
 }
 
-pub type QueryParam<'a> = (&'a str,  &'a str);
-pub type QueryParams<'a> = Vec<QueryParam<'a>>;
+#[derive(Debug, PartialEq, Eq)]
+pub enum IPNum {
+    IPV4(u8),
+    IPV6(u16)
+}
+
+impl Into<Option<u8>> for IPNum {
+    fn into(self) -> Option<u8> {
+        match self {
+            IPNum::IPV4(n) => Some(n),
+            _ => None,
+        }
+    }
+}
+
+impl Into<Option<u16>> for IPNum {
+    fn into(self) -> Option<u16> {
+        match self {
+            IPNum::IPV6(n) => Some(n),
+            _ => None,
+        }
+    }
+}
 
 // Mention
 #[derive(Debug, PartialEq, Eq)]
