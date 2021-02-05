@@ -1,11 +1,18 @@
+#[derive(Debug, PartialEq, Eq)]
+pub enum TextParts<'a> {
+    URI(URI),
+    Mention(Mention<'a>),
+    Other(&'a str),
+}
+
 // URI
 #[derive(Debug, PartialEq, Eq)]
-pub struct URI<'a> {
-    scheme: Scheme,
-    host: Host,
-    port: Option<u16>,
-    path: Option<&'a str>,
-    query: Option<&'a str>,
+pub struct URI {
+    pub scheme: Scheme,
+    pub host: Host,
+    pub port: Option<u16>,
+    pub path: Option<String>,
+    pub query: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -59,6 +66,6 @@ impl Into<Option<u16>> for IPNum {
 // Mention
 #[derive(Debug, PartialEq, Eq)]
 pub struct Mention<'a> {
-    user_id: u32,
-    name: &'a str
+    pub user_id: u32,
+    pub name: &'a str
 }

@@ -1,8 +1,35 @@
-use nom::{AsChar, InputTakeAtPosition, branch::alt, bytes::complete::{tag, tag_no_case, take, take_till}, character::{complete::{alpha1, one_of}, is_digit}, error::VerboseError, error::{ErrorKind, context}, multi::{count, many1, many_m_n}, sequence::{preceded, terminated, tuple}};
+use nom::{AsChar, InputTakeAtPosition, branch::alt, combinator::opt, bytes::complete::{tag, tag_no_case, take}, character::complete::{alpha1, one_of, char}, error::VerboseError, error::{ErrorKind, context}, multi::{count, many1, many_m_n}, character::complete::none_of, sequence::{preceded, terminated, tuple}};
 use nom::Err as NomErr;
 
-use crate::{Result, types::{Host, IPNum, Scheme}};
+use crate::{Result, types::{Host, IPNum, Scheme, URI}};
 
+pub fn uri(input: &str) -> Result<&str, URI> {
+    context(
+        "uri",
+        tuple((
+            scheme,
+            ip_or_host,
+            opt(port),
+            opt(path),
+            opt(query),
+        )),
+    )(input)
+        .map(|(next_input, res)| {
+            let (scheme, host, port, path, query) = res;
+            (
+                next_input,
+                URI {
+                    scheme,
+                    host,
+                    port,
+                    path,
+                    query,
+                }
+            )
+        })
+}
+
+// Parts
 fn scheme(input: &str) -> Result<&str, Scheme> {
     context(
         "scheme",
@@ -31,8 +58,8 @@ fn ip(input: &str) -> Result<&str, Host> {
     context(
         "ip",
         alt((
-            tuple((count(terminated(ipv4_num, tag(".")), 3), ipv4_num)),
-            tuple((preceded(tag("["), many1(terminated(ipv6_num, tag(":")))), terminated(ipv6_num, tag("]")))),
+            tuple((count(terminated(ipv4_num, char('.')), 3), ipv4_num)),
+            tuple((preceded(char('['), many1(terminated(ipv6_num, char(':')))), terminated(ipv6_num, char(']')))),
         )),
     )(input)
         .map(|(next_input, res)| {
@@ -97,12 +124,23 @@ fn ip_or_host(input: &str) -> Result<&str, Host> {
 }
 
 fn port(input: &str) -> Result<&str, u16> {
-    context("port", take_till(is_digit))(input)
-        .map(|(next_input, res)| {
-            dbg!(res);
-
-            Ok((next_input, res.parse::<u16>))
+    context("port", preceded(char(':'), many1(one_of("0123456789"))))(input)
+        .and_then(|(next_input, res)| {
+            match res.into_iter().collect::<String>().parse::<u16>() {
+                Ok(n) => Ok((next_input, n)),
+                Err(_) => Err(NomErr::Error(VerboseError { errors: vec![] })),
+            }
         })
+}
+
+fn path(input: &str) -> Result<&str, String> {
+    context("path", many1(none_of("?#")))(input)
+        .map(|(next_input, res)| (next_input, res.into_iter().collect()))
+}
+
+fn query(input: &str) -> Result<&str, String> {
+    context("query", preceded(char('?'), many1(none_of("#"))))(input)
+        .map(|(next_input, res)| (next_input, res.into_iter().collect()))
 }
 
 // utils
@@ -166,5 +204,24 @@ mod tests {
     fn test_ip_or_host() {
         assert_eq!(ip_or_host("[::ffff:124:1234:124]:4242"), Ok((":4242", Host::IPV6([0x0,0x0,0x0,0x0,0xffff,0x124,0x1234,0x124]))));
         assert_eq!(ip_or_host("example.org:69420"), Ok((":69420", Host::HOST("example.org".to_string()))));
+    }
+
+    #[test]
+    fn test_port() {
+        assert_eq!(port(":8080"), Ok(("", 8080)));
+        assert_eq!(port(":123/hello/world"), Ok(("/hello/world", 123)));
+    }
+
+    #[test]
+    fn test_path() {
+        assert_eq!(path("/"), Ok(("", "/".to_string())));
+        assert_eq!(path("/hello/world#f"), Ok(("#f", "/hello/world".to_string())));
+        assert_eq!(path("/test?yay=x&w=y#asd"), Ok(("?yay=x&w=y#asd", "/test".to_string())));
+    }
+
+    #[test]
+    fn test_query() {
+        assert_eq!(query("?abc=d&x=w"), Ok(("", "abc=d&x=w".to_string())));
+        assert_eq!(query("?q=asdf#f"), Ok(("#f", "q=asdf".to_string())));
     }
 }
