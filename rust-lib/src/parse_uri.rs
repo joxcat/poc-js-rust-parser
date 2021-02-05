@@ -1,4 +1,4 @@
-use nom::{AsChar, InputTakeAtPosition, branch::alt, bytes::complete::{tag_no_case, tag, take}, character::complete::{alpha1, one_of}, error::VerboseError, error::{ErrorKind, context}, multi::{count, many1, many_m_n}, sequence::{preceded, terminated, tuple}};
+use nom::{AsChar, InputTakeAtPosition, branch::alt, bytes::complete::{tag, tag_no_case, take, take_till}, character::{complete::{alpha1, one_of}, is_digit}, error::VerboseError, error::{ErrorKind, context}, multi::{count, many1, many_m_n}, sequence::{preceded, terminated, tuple}};
 use nom::Err as NomErr;
 
 use crate::{Result, types::{Host, IPNum, Scheme}};
@@ -16,7 +16,7 @@ fn host(input: &str) -> Result<&str, Host> {
         "host",
         alt((
             tuple((many1(terminated(alphanumerichyphen1, tag("."))), alpha1)),
-            tuple((many_m_n(1, 1, alphanumerichyphen1), take(0 as usize))),
+            tuple((many_m_n(1, 1, alphanumerichyphen1), take(0_usize))),
         )),
     )(input)
         .map(|(next_input, mut res)| {
@@ -81,7 +81,7 @@ fn ipv4_num(input: &str) -> Result<&str, IPNum> {
 
 fn ipv6_num(input: &str) -> Result<&str, IPNum> {
     context("ipv6 number", n_to_m_hexas(0, 4))(input).and_then(|(next_input, res)| {
-        if (&res).len() == 0 {
+        if res.is_empty() {
             Ok((next_input, IPNum::IPV6(0)))
         } else {
             match u16::from_str_radix(&res, 16) {
@@ -96,7 +96,16 @@ fn ip_or_host(input: &str) -> Result<&str, Host> {
     context("ip or domain", alt((ip, host)))(input)
 }
 
-// Utils
+fn port(input: &str) -> Result<&str, u16> {
+    context("port", take_till(is_digit))(input)
+        .map(|(next_input, res)| {
+            dbg!(res);
+
+            Ok((next_input, res.parse::<u16>))
+        })
+}
+
+// utils
 fn alphanumerichyphen1<T>(input: T) -> Result<T, T>
 where
     T: InputTakeAtPosition,
@@ -105,7 +114,7 @@ where
     input.split_at_position1_complete(
         |item| {
             let char_item = item.as_char();
-            !(char_item == '-') && !char_item.is_alphanum()
+            char_item != '-' && !char_item.is_alphanum()
         },
         ErrorKind::AlphaNumeric,
     )

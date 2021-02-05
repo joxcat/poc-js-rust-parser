@@ -9,8 +9,8 @@ mod parse_uri;
 type Result<T, U> = IResult<T, U, VerboseError<T>>;
 
 #[wasm_bindgen]
-pub fn parse_demo(text: &str) -> String {
-    return String::new();
+pub fn parse_demo(_text: &str) -> String {
+    String::new()
 }
 
 #[cfg(test)]
