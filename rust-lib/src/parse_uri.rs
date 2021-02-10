@@ -134,12 +134,12 @@ fn port(input: &str) -> Result<&str, u16> {
 }
 
 fn path(input: &str) -> Result<&str, String> {
-    context("path", many1(none_of("?#")))(input)
+    context("path", many1(none_of("?# ")))(input)
         .map(|(next_input, res)| (next_input, res.into_iter().collect()))
 }
 
 fn query(input: &str) -> Result<&str, String> {
-    context("query", preceded(char('?'), many1(none_of("#"))))(input)
+    context("query", preceded(char('?'), many1(none_of("# "))))(input)
         .map(|(next_input, res)| (next_input, res.into_iter().collect()))
 }
 
